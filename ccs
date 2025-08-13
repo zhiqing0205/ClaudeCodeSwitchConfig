@@ -1,0 +1,680 @@
+#!/bin/bash
+
+# =============================================================================
+# Claude Config Switcher (CCS) - Claude API 配置管理工具
+# 
+# 功能：
+# - 管理多个 Claude API 配置
+# - 美观的交互式界面
+# - 支持添加、删除、修改、切换配置
+# - 兼容 Linux 和 Mac
+# - 集成 Claude Code 设置文件生成
+#
+# 使用方法：
+# - `ccs`                : 显示交互式菜单
+# - `ccs <名称>`         : 直接切换到指定配置  
+# - `ccs <数字>`         : 切换到列表中第N个配置
+# - `ccs add`           : 添加新配置
+# - `ccs delete`        : 删除配置
+# - `ccs edit`          : 编辑配置
+# - `ccs list`          : 列出所有配置
+# - `ccs help`          : 显示帮助信息
+# =============================================================================
+
+set -euo pipefail
+
+# --- 全局变量 ---
+SCRIPT_NAME="Claude Config Switcher"
+VERSION="1.0.0"
+CLAUDE_DIR="${HOME}/.claude"
+KEYS_FILE="${CLAUDE_DIR}/keys.conf"
+SETTINGS_FILE="${CLAUDE_DIR}/settings.json"
+CURRENT_FILE="${CLAUDE_DIR}/current"
+
+# 颜色定义
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
+WHITE='\033[0;37m'
+BOLD='\033[1m'
+NC='\033[0m' # No Color
+
+# 图标定义
+ICON_SUCCESS="✅"
+ICON_ERROR="❌"
+ICON_WARNING="⚠️"
+ICON_INFO="ℹ️"
+ICON_ARROW="➤"
+ICON_BULLET="•"
+ICON_CONFIG="🔧"
+ICON_CLAUDE="🤖"
+
+# GitHub用户信息
+GITHUB_USER="zhiqing0205"
+REPO_URL="https://github.com/${GITHUB_USER}/ClaudeCodeSwitchConfig"
+
+# =============================================================================
+# 辅助函数
+# =============================================================================
+
+# 打印彩色消息
+print_color() {
+    local color="$1"
+    local message="$2"
+    printf "${color}%s${NC}\n" "$message"
+}
+
+# 打印标题
+print_title() {
+    local title="$1"
+    echo
+    print_color "$BOLD$CYAN" "╔══════════════════════════════════════════════════════════════════════════════╗"
+    printf "${BOLD}${CYAN}║${NC}${BOLD}%-78s${CYAN}║${NC}\n" "  $ICON_CLAUDE $SCRIPT_NAME $VERSION - $title"
+    print_color "$BOLD$CYAN" "╚══════════════════════════════════════════════════════════════════════════════╝"
+    echo
+}
+
+# 打印分割线
+print_separator() {
+    print_color "$CYAN" "────────────────────────────────────────────────────────────────────────────────"
+}
+
+# 成功消息
+print_success() {
+    print_color "$GREEN" "$ICON_SUCCESS $1"
+}
+
+# 错误消息
+print_error() {
+    print_color "$RED" "$ICON_ERROR $1" >&2
+}
+
+# 警告消息
+print_warning() {
+    print_color "$YELLOW" "$ICON_WARNING $1"
+}
+
+# 信息消息
+print_info() {
+    print_color "$BLUE" "$ICON_INFO $1"
+}
+
+# 从配置文件获取值
+get_config_value() {
+    local file="$1"
+    local section="$2"
+    local key="$3"
+    
+    awk -v section="$section" -v key="$key" '
+        $0 == "[" section "]" { in_section = 1; next }
+        in_section && /^\s*\[.*\]\s*$/ { in_section = 0; exit }
+        in_section {
+            if (index($0, key " =") == 1 || index($0, key "=") == 1) {
+                split($0, parts, "=")
+                if (length(parts) > 1) {
+                    value = parts[2]
+                    for (i = 3; i <= length(parts); i++) {
+                        value = value "=" parts[i]
+                    }
+                    sub(/^[ \t]*/, "", value)
+                    sub(/[ \t]*$/, "", value)
+                    print value
+                    exit
+                }
+            }
+        }
+    ' "$file"
+}
+
+# 获取所有配置名称
+get_all_configs() {
+    if [[ ! -f "$KEYS_FILE" ]]; then
+        return 0
+    fi
+    awk '/^\[.*\]$/ { gsub(/[\[\]]/, "", $0); print }' "$KEYS_FILE"
+}
+
+# 获取当前激活的配置
+get_current_config() {
+    if [[ -f "$CURRENT_FILE" ]]; then
+        cat "$CURRENT_FILE"
+    fi
+}
+
+# 检查配置是否存在
+config_exists() {
+    local config_name="$1"
+    grep -q "^\[$config_name\]$" "$KEYS_FILE" 2>/dev/null
+}
+
+# 初始化Claude目录
+init_claude_dir() {
+    if [[ ! -d "$CLAUDE_DIR" ]]; then
+        print_info "创建 Claude 配置目录: $CLAUDE_DIR"
+        if ! mkdir -p "$CLAUDE_DIR" || ! chmod 700 "$CLAUDE_DIR"; then
+            print_error "无法创建或设置目录权限: $CLAUDE_DIR"
+            return 1
+        fi
+    fi
+    
+    if [[ ! -f "$KEYS_FILE" ]]; then
+        touch "$KEYS_FILE"
+        chmod 600 "$KEYS_FILE"
+    fi
+    
+    return 0
+}
+
+# 生成settings.json文件
+generate_settings() {
+    local config_name="$1"
+    local api_key base_url
+    api_key=$(get_config_value "$KEYS_FILE" "$config_name" "apiKey")
+    base_url=$(get_config_value "$KEYS_FILE" "$config_name" "baseUrl")
+
+    if [[ -z "$api_key" ]]; then
+        print_error "在配置 '$config_name' 中未找到 'apiKey'"
+        return 1
+    fi
+    if [[ -z "$base_url" ]]; then
+        print_error "在配置 '$config_name' 中未找到 'baseUrl'"
+        return 1
+    fi
+
+    # 生成settings.json内容
+    cat > "$SETTINGS_FILE" << EOF
+{
+  "env": {
+    "ANTHROPIC_API_KEY": "${api_key}",
+    "ANTHROPIC_BASE_URL": "${base_url}",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": 1
+  },
+  "permissions": {
+    "allow": [
+      "Bash(*)",
+      "LS(*)",
+      "Read(*)",
+      "Write(*)",
+      "Edit(*)",
+      "MultiEdit(*)",
+      "Glob(*)",
+      "Grep(*)",
+      "Task(*)",
+      "WebFetch(*)",
+      "WebSearch(*)",
+      "TodoWrite(*)",
+      "NotebookRead(*)",
+      "NotebookEdit(*)"
+    ],
+    "deny": []
+  },
+  "apiKeyHelper": "echo '${api_key}'",
+  "statusLine": {
+    "type": "command", 
+    "command": "echo '🤖 Claude [${config_name}]'",
+    "padding": 0
+  }
+}
+EOF
+
+    if [[ $? -eq 0 ]]; then
+        print_success "成功切换到配置: '$config_name'"
+        print_info "API 密钥: ...${api_key: -4}"
+        print_info "Base URL: $base_url"
+        return 0
+    else
+        print_error "写入 settings.json 失败"
+        return 1
+    fi
+}
+
+# =============================================================================
+# 核心功能函数
+# =============================================================================
+
+# 列出所有配置
+list_configs() {
+    local configs
+    mapfile -t configs < <(get_all_configs)
+    local current_config
+    current_config=$(get_current_config)
+    
+    if [[ ${#configs[@]} -eq 0 ]]; then
+        print_warning "未找到任何 Claude API 配置"
+        print_info "使用 'ccs add' 来添加第一个配置"
+        return 0
+    fi
+    
+    print_title "Claude API 配置列表"
+    
+    local i=1
+    for config in "${configs[@]}"; do
+        local status=""
+        if [[ "$config" == "$current_config" ]]; then
+            status="${GREEN}${BOLD}[当前]${NC}"
+        fi
+        
+        # 获取配置信息
+        local base_url api_key
+        base_url=$(get_config_value "$KEYS_FILE" "$config" "baseUrl")
+        api_key=$(get_config_value "$KEYS_FILE" "$config" "apiKey")
+        
+        if [[ -n "$api_key" ]]; then
+            api_key="...${api_key: -4}"
+        else
+            api_key="未设置"
+        fi
+        
+        printf "${BOLD}${WHITE}%2d.${NC} ${CYAN}%-20s${NC} %s\n" "$i" "$config" "$status"
+        printf "    ${BLUE}Base URL:${NC} %s\n" "${base_url:-未设置}"
+        printf "    ${BLUE}API Key:${NC}  %s\n" "$api_key"
+        echo
+        i=$((i + 1))
+    done
+}
+
+# 添加新配置
+add_config() {
+    print_title "添加新的 Claude API 配置"
+    
+    local config_name base_url api_key
+    
+    while true; do
+        read -rp "$(print_color "$BOLD$WHITE" "配置名称 (例如: MyAPI): ")" config_name
+        if [[ -z "$config_name" ]]; then
+            print_error "配置名称不能为空"
+            continue
+        fi
+        
+        if config_exists "$config_name"; then
+            print_error "配置 '$config_name' 已存在"
+            continue
+        fi
+        
+        # 验证配置名称格式
+        if [[ ! "$config_name" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+            print_error "配置名称只能包含字母、数字、下划线和横线"
+            continue
+        fi
+        
+        break
+    done
+    
+    while true; do
+        read -rp "$(print_color "$BOLD$WHITE" "Base URL: ")" base_url
+        if [[ -z "$base_url" ]]; then
+            print_error "Base URL 不能为空"
+            continue
+        fi
+        break
+    done
+    
+    while true; do
+        read -rp "$(print_color "$BOLD$WHITE" "API Key: ")" api_key
+        if [[ -z "$api_key" ]]; then
+            print_error "API Key 不能为空"
+            continue
+        fi
+        break
+    done
+    
+    # 添加到配置文件
+    {
+        echo ""
+        echo "[$config_name]"
+        echo "baseUrl = $base_url"
+        echo "apiKey = $api_key"
+    } >> "$KEYS_FILE"
+    
+    print_success "配置 '$config_name' 添加成功！"
+}
+
+# 删除配置
+delete_config() {
+    print_title "删除 Claude API 配置"
+    
+    local configs
+    mapfile -t configs < <(get_all_configs)
+    
+    if [[ ${#configs[@]} -eq 0 ]]; then
+        print_warning "没有可删除的配置"
+        return 0
+    fi
+    
+    list_configs
+    
+    local selection
+    read -rp "$(print_color "$BOLD$RED" "请选择要删除的配置 (输入数字或名称): ")" selection
+    
+    local config_to_delete=""
+    
+    # 检查是否为数字
+    if [[ "$selection" =~ ^[0-9]+$ ]]; then
+        if [[ "$selection" -ge 1 && "$selection" -le ${#configs[@]} ]]; then
+            config_to_delete="${configs[$((selection - 1))]}"
+        else
+            print_error "无效的数字选择: $selection"
+            return 1
+        fi
+    else
+        if config_exists "$selection"; then
+            config_to_delete="$selection"
+        else
+            print_error "配置 '$selection' 不存在"
+            return 1
+        fi
+    fi
+    
+    # 确认删除
+    print_warning "即将删除配置: $config_to_delete"
+    read -rp "$(print_color "$RED" "确认删除? (y/N): ")" confirm
+    
+    if [[ "$confirm" =~ ^[Yy]$ ]]; then
+        # 使用临时文件删除配置
+        local temp_file
+        temp_file=$(mktemp)
+        awk -v config="$config_to_delete" '
+            /^\[.*\]$/ {
+                section = $0
+                gsub(/[\[\]]/, "", section)
+                if (section == config) {
+                    skip = 1
+                } else {
+                    skip = 0
+                    print $0
+                }
+                next
+            }
+            !skip { print $0 }
+        ' "$KEYS_FILE" > "$temp_file"
+        
+        mv "$temp_file" "$KEYS_FILE"
+        
+        # 如果删除的是当前配置，清除当前配置记录
+        local current_config
+        current_config=$(get_current_config)
+        if [[ "$current_config" == "$config_to_delete" ]]; then
+            rm -f "$CURRENT_FILE"
+            rm -f "$SETTINGS_FILE"
+            print_warning "已清除当前配置记录和 settings.json"
+        fi
+        
+        print_success "配置 '$config_to_delete' 删除成功！"
+    else
+        print_info "删除操作已取消"
+    fi
+}
+
+# 编辑配置
+edit_config() {
+    print_title "编辑 Claude API 配置"
+    
+    local configs
+    mapfile -t configs < <(get_all_configs)
+    
+    if [[ ${#configs[@]} -eq 0 ]]; then
+        print_warning "没有可编辑的配置"
+        return 0
+    fi
+    
+    list_configs
+    
+    local selection
+    read -rp "$(print_color "$BOLD$YELLOW" "请选择要编辑的配置 (输入数字或名称): ")" selection
+    
+    local config_to_edit=""
+    
+    if [[ "$selection" =~ ^[0-9]+$ ]]; then
+        if [[ "$selection" -ge 1 && "$selection" -le ${#configs[@]} ]]; then
+            config_to_edit="${configs[$((selection - 1))]}"
+        else
+            print_error "无效的数字选择: $selection"
+            return 1
+        fi
+    else
+        if config_exists "$selection"; then
+            config_to_edit="$selection"
+        else
+            print_error "配置 '$selection' 不存在"
+            return 1
+        fi
+    fi
+    
+    # 获取当前配置值
+    local current_base_url current_api_key
+    current_base_url=$(get_config_value "$KEYS_FILE" "$config_to_edit" "baseUrl")
+    current_api_key=$(get_config_value "$KEYS_FILE" "$config_to_edit" "apiKey")
+    
+    print_separator
+    print_info "当前配置 '$config_to_edit' 的内容:"
+    echo "  Base URL: $current_base_url"
+    echo "  API Key:  ...${current_api_key: -4}"
+    echo
+    
+    local new_base_url new_api_key
+    read -rp "$(print_color "$BOLD$WHITE" "新的 Base URL (回车保持不变): ")" new_base_url
+    read -rp "$(print_color "$BOLD$WHITE" "新的 API Key (回车保持不变): ")" new_api_key
+    
+    # 如果用户没输入，保持原值
+    if [[ -z "$new_base_url" ]]; then
+        new_base_url="$current_base_url"
+    fi
+    if [[ -z "$new_api_key" ]]; then
+        new_api_key="$current_api_key"
+    fi
+    
+    # 使用临时文件替换配置
+    local temp_file
+    temp_file=$(mktemp)
+    
+    awk -v config="$config_to_edit" -v new_base_url="$new_base_url" -v new_api_key="$new_api_key" '
+        /^\[.*\]$/ {
+            section = $0
+            gsub(/[\[\]]/, "", section)
+            if (section == config) {
+                print "["config"]"
+                print "baseUrl = " new_base_url
+                print "apiKey = " new_api_key
+                skip = 1
+            } else {
+                skip = 0
+                print $0
+            }
+            next
+        }
+        skip && /^\s*\[.*\]\s*$/ { skip = 0 }
+        !skip { print $0 }
+    ' "$KEYS_FILE" > "$temp_file"
+    
+    mv "$temp_file" "$KEYS_FILE"
+    print_success "配置 '$config_to_edit' 编辑成功！"
+}
+
+# 切换配置
+switch_config() {
+    local target_config="$1"
+    
+    if ! config_exists "$target_config"; then
+        print_error "配置 '$target_config' 不存在"
+        return 1
+    fi
+    
+    # 生成settings.json并保存当前配置名称
+    if generate_settings "$target_config"; then
+        echo "$target_config" > "$CURRENT_FILE"
+        return 0
+    else
+        return 1
+    fi
+}
+
+# 交互式菜单
+interactive_menu() {
+    while true; do
+        clear
+        print_title "配置管理主菜单"
+        
+        local current_config
+        current_config=$(get_current_config)
+        if [[ -n "$current_config" ]]; then
+            print_color "$GREEN" "$ICON_CONFIG 当前配置: $current_config"
+            echo
+        fi
+        
+        list_configs
+        
+        print_separator
+        printf "${BOLD}${WHITE}操作选项:${NC}\n"
+        printf "${CYAN}[1-9]${NC}     切换到对应编号的配置\n"
+        printf "${CYAN}[a]dd${NC}     添加新配置\n"
+        printf "${CYAN}[d]elete${NC}  删除配置\n"
+        printf "${CYAN}[e]dit${NC}    编辑配置\n"
+        printf "${CYAN}[l]ist${NC}    刷新配置列表\n"
+        printf "${CYAN}[h]elp${NC}    显示帮助信息\n"
+        printf "${CYAN}[q]uit${NC}    退出程序\n"
+        print_separator
+        
+        local choice
+        read -rp "$(print_color "$BOLD$WHITE" "请选择操作: ")" choice
+        
+        case "$choice" in
+            [1-9])
+                local configs
+                mapfile -t configs < <(get_all_configs)
+                if [[ "$choice" -le ${#configs[@]} ]]; then
+                    switch_config "${configs[$((choice - 1))]}"
+                    read -rp "$(print_color "$CYAN" "按 Enter 键继续...")"
+                else
+                    print_error "无效的配置编号"
+                    read -rp "$(print_color "$CYAN" "按 Enter 键继续...")"
+                fi
+                ;;
+            a|add)
+                add_config
+                read -rp "$(print_color "$CYAN" "按 Enter 键继续...")"
+                ;;
+            d|delete)
+                delete_config
+                read -rp "$(print_color "$CYAN" "按 Enter 键继续...")"
+                ;;
+            e|edit)
+                edit_config
+                read -rp "$(print_color "$CYAN" "按 Enter 键继续...")"
+                ;;
+            l|list)
+                continue
+                ;;
+            h|help)
+                show_help
+                read -rp "$(print_color "$CYAN" "按 Enter 键继续...")"
+                ;;
+            q|quit)
+                print_info "感谢使用 Claude Config Switcher！"
+                exit 0
+                ;;
+            *)
+                print_error "无效的选择: $choice"
+                read -rp "$(print_color "$CYAN" "按 Enter 键继续...")"
+                ;;
+        esac
+    done
+}
+
+# 显示帮助信息
+show_help() {
+    clear
+    print_title "帮助信息"
+    
+    cat << EOF
+${BOLD}用法:${NC}
+  ccs                        显示交互式菜单
+  ccs <配置名>               直接切换到指定配置
+  ccs <数字>                 切换到列表中第N个配置
+  ccs add                    添加新配置
+  ccs delete                 删除配置
+  ccs edit                   编辑配置
+  ccs list                   列出所有配置
+  ccs help                   显示此帮助信息
+
+${BOLD}示例:${NC}
+  ccs                        # 进入交互式菜单
+  ccs production             # 切换到 production 配置
+  ccs 1                      # 切换到第1个配置
+  ccs add                    # 添加新配置
+
+${BOLD}文件位置:${NC}
+  配置目录: ${CLAUDE_DIR}
+  配置文件: ${KEYS_FILE}
+  设置文件: ${SETTINGS_FILE}
+  当前配置: ${CURRENT_FILE}
+
+${BOLD}配置格式:${NC}
+  [配置名称]
+  baseUrl = https://api.anthropic.com
+  apiKey = sk-ant-xxxxx
+
+${BOLD}项目地址:${NC}
+  GitHub: ${REPO_URL}
+  作者: ${GITHUB_USER}
+
+EOF
+}
+
+# =============================================================================
+# 主程序
+# =============================================================================
+
+main() {
+    # 初始化Claude目录
+    if ! init_claude_dir; then
+        exit 1
+    fi
+    
+    # 解析命令行参数
+    case "${1:-}" in
+        "")
+            interactive_menu
+            ;;
+        add)
+            add_config
+            ;;
+        delete)
+            delete_config
+            ;;
+        edit)
+            edit_config
+            ;;
+        list)
+            list_configs
+            ;;
+        help|-h|--help)
+            show_help
+            ;;
+        [1-9])
+            local configs
+            mapfile -t configs < <(get_all_configs)
+            if [[ "$1" -le ${#configs[@]} ]]; then
+                switch_config "${configs[$((1 - 1))]}"
+            else
+                print_error "无效的配置编号: $1"
+                exit 1
+            fi
+            ;;
+        *)
+            # 尝试作为配置名称
+            if config_exists "$1"; then
+                switch_config "$1"
+            else
+                print_error "未知命令或配置: $1"
+                print_info "使用 'ccs help' 查看帮助信息"
+                exit 1
+            fi
+            ;;
+    esac
+}
+
+# 运行主程序
+main "$@"
