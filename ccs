@@ -30,6 +30,7 @@ CLAUDE_DIR="${HOME}/.claude"
 KEYS_FILE="${CLAUDE_DIR}/keys.conf"
 SETTINGS_FILE="${CLAUDE_DIR}/settings.json"
 CURRENT_FILE="${CLAUDE_DIR}/current"
+TEMPLATE_FILE="${CLAUDE_DIR}/template.json"
 
 # 颜色定义
 RED='\033[0;31m'
@@ -168,28 +169,14 @@ init_claude_dir() {
     return 0
 }
 
-# 生成settings.json文件
-generate_settings() {
-    local config_name="$1"
-    local api_key base_url
-    api_key=$(get_config_value "$KEYS_FILE" "$config_name" "apiKey")
-    base_url=$(get_config_value "$KEYS_FILE" "$config_name" "baseUrl")
-
-    if [[ -z "$api_key" ]]; then
-        print_error "在配置 '$config_name' 中未找到 'apiKey'"
-        return 1
-    fi
-    if [[ -z "$base_url" ]]; then
-        print_error "在配置 '$config_name' 中未找到 'baseUrl'"
-        return 1
-    fi
-
-    # 生成settings.json内容
-    cat > "$SETTINGS_FILE" << EOF
+# 创建默认模板文件
+create_default_template() {
+    if [[ ! -f "$TEMPLATE_FILE" ]]; then
+        cat > "$TEMPLATE_FILE" << 'EOF'
 {
   "env": {
-    "ANTHROPIC_API_KEY": "${api_key}",
-    "ANTHROPIC_BASE_URL": "${base_url}",
+    "ANTHROPIC_API_KEY": "{{API_KEY}}",
+    "ANTHROPIC_BASE_URL": "{{BASE_URL}}",
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": 1
   },
   "permissions": {
@@ -211,14 +198,49 @@ generate_settings() {
     ],
     "deny": []
   },
-  "apiKeyHelper": "echo '${api_key}'",
-  "statusLine": {
-    "type": "command", 
-    "command": "echo '🤖 Claude [${config_name}]'",
-    "padding": 0
-  }
+  "apiKeyHelper": "echo '{{API_KEY}}'"
 }
 EOF
+        print_info "已创建默认模板文件: $TEMPLATE_FILE"
+    fi
+}
+
+# 生成settings.json文件
+generate_settings() {
+    local config_name="$1"
+    local api_key base_url
+    api_key=$(get_config_value "$KEYS_FILE" "$config_name" "apiKey")
+    base_url=$(get_config_value "$KEYS_FILE" "$config_name" "baseUrl")
+
+    if [[ -z "$api_key" ]]; then
+        print_error "在配置 '$config_name' 中未找到 'apiKey'"
+        return 1
+    fi
+    if [[ -z "$base_url" ]]; then
+        print_error "在配置 '$config_name' 中未找到 'baseUrl'"
+        return 1
+    fi
+
+    # 确保模板文件存在
+    create_default_template
+
+    # 使用模板生成settings.json
+    if [[ -f "$TEMPLATE_FILE" ]]; then
+        # 读取模板并替换变量
+        local template_content
+        template_content=$(cat "$TEMPLATE_FILE")
+        
+        # 替换模板变量
+        template_content="${template_content//\{\{API_KEY\}\}/$api_key}"
+        template_content="${template_content//\{\{BASE_URL\}\}/$base_url}"
+        template_content="${template_content//\{\{CONFIG_NAME\}\}/$config_name}"
+        
+        # 写入settings.json
+        echo "$template_content" > "$SETTINGS_FILE"
+    else
+        print_error "模板文件不存在: $TEMPLATE_FILE"
+        return 1
+    fi
 
     if [[ $? -eq 0 ]]; then
         print_success "成功切换到配置: '$config_name'"
@@ -493,6 +515,69 @@ edit_config() {
     print_success "配置 '$config_to_edit' 编辑成功！"
 }
 
+# 编辑模板
+edit_template() {
+    print_title "编辑 settings.json 模板"
+    
+    # 确保模板文件存在
+    create_default_template
+    
+    print_info "当前模板文件位置: $TEMPLATE_FILE"
+    print_info "模板支持以下变量:"
+    echo "  {{API_KEY}}     - 当前配置的 API Key"
+    echo "  {{BASE_URL}}    - 当前配置的 Base URL"  
+    echo "  {{CONFIG_NAME}} - 当前配置的名称"
+    echo
+    
+    print_warning "请确保 JSON 格式正确，否则可能导致配置生成失败"
+    echo
+    
+    # 选择编辑器
+    local editor=""
+    if command -v nano >/dev/null 2>&1; then
+        editor="nano"
+    elif command -v vim >/dev/null 2>&1; then
+        editor="vim"
+    elif command -v vi >/dev/null 2>&1; then
+        editor="vi"
+    else
+        print_error "未找到可用的编辑器 (nano, vim, vi)"
+        return 1
+    fi
+    
+    read -rp "$(print_color "$BOLD$WHITE" "按 Enter 键使用 $editor 编辑模板，或输入 'c' 取消: ")" confirm
+    if [[ "$confirm" =~ ^[Cc]$ ]]; then
+        print_info "已取消模板编辑"
+        return 0
+    fi
+    
+    # 备份原模板
+    local backup_file="${TEMPLATE_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
+    cp "$TEMPLATE_FILE" "$backup_file"
+    print_info "已创建模板备份: $backup_file"
+    
+    # 启动编辑器
+    if "$editor" "$TEMPLATE_FILE"; then
+        # 验证 JSON 格式
+        if command -v python3 >/dev/null 2>&1; then
+            if python3 -m json.tool "$TEMPLATE_FILE" >/dev/null 2>&1; then
+                print_success "模板编辑成功，JSON 格式验证通过！"
+            else
+                print_error "JSON 格式验证失败！"
+                read -rp "是否恢复备份? (Y/n): " restore
+                if [[ ! "$restore" =~ ^[Nn]$ ]]; then
+                    cp "$backup_file" "$TEMPLATE_FILE"
+                    print_info "已恢复原模板"
+                fi
+            fi
+        else
+            print_success "模板编辑完成（未进行格式验证）"
+        fi
+    else
+        print_error "编辑器退出异常"
+    fi
+}
+
 # 切换配置
 switch_config() {
     local target_config="$1"
@@ -532,6 +617,7 @@ interactive_menu() {
         printf "${CYAN}[a]dd${NC}     添加新配置\n"
         printf "${CYAN}[d]elete${NC}  删除配置\n"
         printf "${CYAN}[e]dit${NC}    编辑配置\n"
+        printf "${CYAN}[t]emplate${NC} 编辑 settings.json 模板\n"
         printf "${CYAN}[l]ist${NC}    刷新配置列表\n"
         printf "${CYAN}[h]elp${NC}    显示帮助信息\n"
         printf "${CYAN}[q]uit${NC}    退出程序\n"
@@ -562,6 +648,10 @@ interactive_menu() {
                 ;;
             e|edit)
                 edit_config
+                read -rp "$(print_color "$CYAN" "按 Enter 键继续...")"
+                ;;
+            t|template)
+                edit_template
                 read -rp "$(print_color "$CYAN" "按 Enter 键继续...")"
                 ;;
             l|list)
@@ -596,6 +686,7 @@ ${BOLD}用法:${NC}
   ccs add                    添加新配置
   ccs delete                 删除配置
   ccs edit                   编辑配置
+  ccs template               编辑 settings.json 模板
   ccs list                   列出所有配置
   ccs help                   显示此帮助信息
 
@@ -609,6 +700,7 @@ ${BOLD}文件位置:${NC}
   配置目录: ${CLAUDE_DIR}
   配置文件: ${KEYS_FILE}
   设置文件: ${SETTINGS_FILE}
+  模板文件: ${TEMPLATE_FILE}
   当前配置: ${CURRENT_FILE}
 
 ${BOLD}配置格式:${NC}
@@ -646,6 +738,9 @@ main() {
             ;;
         edit)
             edit_config
+            ;;
+        template)
+            edit_template
             ;;
         list)
             list_configs

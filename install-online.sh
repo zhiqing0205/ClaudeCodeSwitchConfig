@@ -30,6 +30,7 @@ RAW_URL="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/main"
 CLAUDE_DIR="${HOME}/.claude"
 KEYS_FILE="${CLAUDE_DIR}/keys.conf"
 CCS_SCRIPT="${CLAUDE_DIR}/ccs"
+TEMPLATE_FILE="${CLAUDE_DIR}/template.json"
 
 # 检测shell配置文件
 if [[ "$OSTYPE" == "darwin"* ]] && [[ "$SHELL" == */zsh ]]; then
@@ -239,6 +240,49 @@ EOF
     print_warning "请使用 'ccs edit' 命令修改示例配置中的 API Key"
 }
 
+# 创建默认模板
+create_default_template() {
+    print_info "创建默认 settings.json 模板..."
+    
+    if [[ -f "$TEMPLATE_FILE" ]]; then
+        print_info "模板文件已存在，跳过创建"
+        return 0
+    fi
+    
+    cat > "$TEMPLATE_FILE" << 'EOF'
+{
+  "env": {
+    "ANTHROPIC_API_KEY": "{{API_KEY}}",
+    "ANTHROPIC_BASE_URL": "{{BASE_URL}}",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": 1
+  },
+  "permissions": {
+    "allow": [
+      "Bash(*)",
+      "LS(*)",
+      "Read(*)",
+      "Write(*)",
+      "Edit(*)",
+      "MultiEdit(*)",
+      "Glob(*)",
+      "Grep(*)",
+      "Task(*)",
+      "WebFetch(*)",
+      "WebSearch(*)",
+      "TodoWrite(*)",
+      "NotebookRead(*)",
+      "NotebookEdit(*)"
+    ],
+    "deny": []
+  },
+  "apiKeyHelper": "echo '{{API_KEY}}'"
+}
+EOF
+    
+    print_success "默认模板已创建: $TEMPLATE_FILE"
+    print_info "使用 'ccs template' 命令可以自定义模板"
+}
+
 # 验证安装
 verify_installation() {
     print_info "验证安装..."
@@ -391,6 +435,7 @@ main() {
     download_ccs
     register_ccs_command
     create_sample_configs
+    create_default_template
     
     if verify_installation; then
         show_next_steps
