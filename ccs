@@ -742,7 +742,7 @@ edit_template() {
     local editor_names=()
     
     # 优先使用环境变量 EDITOR 指定的编辑器
-    if [[ -n "$EDITOR" ]] && command -v "$EDITOR" >/dev/null 2>&1; then
+    if [[ -n "${EDITOR:-}" ]] && command -v "$EDITOR" >/dev/null 2>&1; then
         available_editors+=("$EDITOR")
         editor_names+=("$EDITOR (系统默认编辑器)")
     fi
