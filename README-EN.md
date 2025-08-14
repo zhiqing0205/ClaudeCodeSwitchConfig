@@ -53,7 +53,12 @@ curl -fsSL https://raw.githubusercontent.com/zhiqing0205/ClaudeCodeSwitchConfig/
 - 🚀 **Ready to Use**: Auto-launch after installation, no manual setup
 - 🔧 **Zero Dependencies**: No additional tools or libraries required
 
-After installation, it will auto-launch. For manual start:
+**Experience Immediately After Installation:**
+- 🎉 **Fully Automated**: CCS automatically launches after installation, no manual operations needed
+- 🔄 **Smart Loading**: Auto-loads shell configuration, `ccs` command ready instantly
+- 📱 **Interactive Interface**: Directly enters the beautiful configuration management interface
+
+If auto-launch fails, run manually:
 ```bash
 source ~/.bashrc  # or ~/.zshrc (macOS)
 ccs              # Start using!
@@ -384,14 +389,15 @@ echo "Base URL: $base_url"
 
 | Installation Method | Command | Advantages | Use Cases |
 |-------------------|---------|------------|----------|
-| **Online One-click** (Recommended) | `curl -fsSL https://raw.githubusercontent.com/zhiqing0205/ClaudeCodeSwitchConfig/main/install-online.sh \| bash` | Auto-download latest version<br>Smart environment detection<br>Zero-config installation | First-time install<br>Quick deployment |
-| **Local Install** | `git clone` + `./setup.sh` | Offline installation<br>Review source code<br>Support custom modifications | Development/debugging<br>Offline environments |
+| **Online One-click** (Recommended) | `curl -fsSL https://raw.githubusercontent.com/zhiqing0205/ClaudeCodeSwitchConfig/main/install-online.sh \| bash` | Auto-download latest version<br>Smart environment detection<br>Auto-launch after installation<br>Zero-config installation | First-time install<br>Quick deployment |
+| **Local Install** | `git clone` + `./setup.sh` | Offline installation<br>Review source code<br>Auto-launch after installation<br>Support custom modifications | Development/debugging<br>Offline environments |
 
 ### Online Installation Features
 
 - 🌍 **Latest Version**: Directly download latest version from GitHub
 - 🎯 **Smart Adaptation**: Auto-detect Linux/macOS + bash/zsh
-- ⚡ **Ready to Use**: Auto-launch CCS after installation
+- ⚡ **Ready to Use**: Auto-launch CCS after installation, directly enter interactive interface
+- 🔄 **Seamless Integration**: Auto-load configuration, no manual source needed
 - 🛡️ **Safety Check**: Verify network connection and system compatibility
 
 ## 🗑️ Uninstall

@@ -53,7 +53,12 @@ curl -fsSL https://raw.githubusercontent.com/zhiqing0205/ClaudeCodeSwitchConfig/
 - 🚀 **即装即用**: 安装完成自动启动，无需手动配置
 - 🔧 **零依赖**: 无需额外安装任何工具或库
 
-安装完成后会自动启动，如需手动启动：
+**安装完成即刻体验：**
+- 🎉 **全自动**: 安装完成后 CCS 会自动启动，无需任何手动操作
+- 🔄 **智能加载**: 自动加载 shell 配置，立即可用 `ccs` 命令
+- 📱 **交互界面**: 直接进入美观的配置管理界面
+
+如遇自动启动失败，请手动运行：
 ```bash
 source ~/.bashrc  # 或 ~/.zshrc (macOS)
 ccs              # 开始使用！
@@ -397,14 +402,15 @@ export_claude_config
 
 | 安装方式 | 命令 | 优势 | 适用场景 |
 |---------|------|------|----------|
-| **在线一键安装** (推荐) | `curl -fsSL https://raw.githubusercontent.com/zhiqing0205/ClaudeCodeSwitchConfig/main/install-online.sh \| bash` | 自动下载最新版本<br>智能检测系统环境<br>零配置安装 | 首次安装<br>快速部署 |
-| **本地安装** | `git clone` + `./setup.sh` | 离线安装<br>可查看源码<br>支持自定义修改 | 开发调试<br>离线环境 |
+| **在线一键安装** (推荐) | `curl -fsSL https://raw.githubusercontent.com/zhiqing0205/ClaudeCodeSwitchConfig/main/install-online.sh \| bash` | 自动下载最新版本<br>智能检测系统环境<br>安装完成自动启动<br>零配置安装 | 首次安装<br>快速部署 |
+| **本地安装** | `git clone` + `./setup.sh` | 离线安装<br>可查看源码<br>安装完成自动启动<br>支持自定义修改 | 开发调试<br>离线环境 |
 
 ### 在线安装特色功能
 
 - 🌍 **最新版本**: 直接从 GitHub 下载最新版本
 - 🎯 **智能适配**: 自动检测 Linux/macOS + bash/zsh
-- ⚡ **即装即用**: 安装完成自动启动 CCS
+- ⚡ **即装即用**: 安装完成自动启动 CCS，立即进入交互界面
+- 🔄 **无缝衔接**: 自动加载配置，无需手动 source
 - 🛡️ **安全检查**: 验证网络连接和系统兼容性
 
 ## 🗑️ 卸载

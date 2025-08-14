@@ -300,16 +300,19 @@ show_next_steps() {
     print_color "$BOLD$WHITE" "  下一步操作："
     print_color "$BOLD$CYAN" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo
-    print_color "$YELLOW" "  1. 重新加载 shell 配置："
-    print_color "$WHITE" "     source ~/.bashrc"
+    print_color "$GREEN" "  安装完成后 CCS 将自动启动！"
     echo
-    print_color "$YELLOW" "  2. 开始使用 CCS："
+    print_color "$YELLOW" "  如果自动启动失败，请手动运行："
+    print_color "$WHITE" "     source ~/.bashrc         # 重新加载配置"
+    print_color "$WHITE" "     ccs                      # 启动 CCS"
+    echo
+    print_color "$YELLOW" "  常用 CCS 命令："
     print_color "$WHITE" "     ccs              # 启动交互式菜单"
     print_color "$WHITE" "     ccs add          # 添加新的 API 配置"
     print_color "$WHITE" "     ccs list         # 查看所有配置"
     print_color "$WHITE" "     ccs help         # 查看帮助信息"
     echo
-    print_color "$YELLOW" "  3. 编辑示例配置 (如果需要)："
+    print_color "$YELLOW" "  编辑示例配置 (如果创建了)："
     print_color "$WHITE" "     ccs edit official     # 编辑 official 配置"
     print_color "$WHITE" "     ccs edit custom       # 编辑 custom 配置"
     echo
@@ -412,6 +415,22 @@ main() {
     
     if verify_installation; then
         show_next_steps
+        
+        # 自动启动CCS
+        print_info "正在启动 CCS..."
+        echo
+        
+        # 直接调用CCS脚本
+        if [[ -x "$CCS_SCRIPT" ]]; then
+            print_success "安装完成！正在启动 CCS..."
+            echo
+            # 使用exec替换当前进程，用户退出ccs时直接结束安装脚本
+            exec "$CCS_SCRIPT"
+        else
+            print_warning "无法自动启动 CCS，请手动运行："
+            print_color "$CYAN" "source ~/.bashrc && ccs"
+            print_info "或者直接运行: $CCS_SCRIPT"
+        fi
     else
         print_error "安装过程中出现问题"
         exit 1

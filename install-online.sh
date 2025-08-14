@@ -322,6 +322,8 @@ show_next_steps() {
     print_color "$WHITE" "     source ~/${SHELL_RC_FILE##*/}    # 重新加载配置"
     print_color "$WHITE" "     ccs                              # 启动 CCS"
     echo
+    print_color "$GREEN" "  安装完成后 CCS 将自动启动！"
+    echo
     print_color "$YELLOW" "  常用 CCS 命令："
     print_color "$WHITE" "     ccs              # 启动交互式菜单"
     print_color "$WHITE" "     ccs add          # 添加新的 API 配置"
@@ -441,17 +443,20 @@ main() {
         show_next_steps
         
         # 自动source并执行ccs
-        print_info "正在启动 CCS..."
+        print_info "正在加载配置并启动 CCS..."
         echo
         
-        # 在当前shell中source配置文件并执行ccs
-        if source "$SHELL_RC_FILE" 2>/dev/null && command -v ccs >/dev/null 2>&1; then
+        # 使用更可靠的方式source配置文件并执行ccs
+        # 直接调用CCS脚本而不依赖alias
+        if [[ -x "$CCS_SCRIPT" ]]; then
             print_success "配置已加载！正在启动 CCS..."
             echo
-            exec ccs
+            # 使用exec替换当前进程，用户退出ccs时直接结束安装脚本
+            exec "$CCS_SCRIPT"
         else
-            print_warning "无法自动加载配置，请手动运行："
+            print_warning "无法自动启动 CCS，请手动运行："
             print_color "$CYAN" "source ~/${SHELL_RC_FILE##*/} && ccs"
+            print_info "或者直接运行: $CCS_SCRIPT"
         fi
     else
         print_error "安装过程中出现问题"
