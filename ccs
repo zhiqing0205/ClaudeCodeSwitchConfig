@@ -31,6 +31,7 @@ KEYS_FILE="${CLAUDE_DIR}/keys.conf"
 SETTINGS_FILE="${CLAUDE_DIR}/settings.json"
 CURRENT_FILE="${CLAUDE_DIR}/current"
 TEMPLATE_FILE="${CLAUDE_DIR}/template.json"
+VERSION_CACHE="${CLAUDE_DIR}/.version_cache"
 
 # 颜色定义
 RED='\033[0;31m'
@@ -167,6 +168,177 @@ init_claude_dir() {
     fi
     
     return 0
+}
+
+# 检查更新
+check_for_updates() {
+    # 静默模式，避免干扰用户体验
+    local should_check=true
+    
+    # 检查是否有网络和必要工具
+    if ! command -v curl >/dev/null 2>&1; then
+        return 0
+    fi
+    
+    # 检查缓存，避免频繁检查（每6小时检查一次）
+    if [[ -f "$VERSION_CACHE" ]]; then
+        local last_check
+        last_check=$(stat -c %Y "$VERSION_CACHE" 2>/dev/null || echo 0)
+        local current_time
+        current_time=$(date +%s)
+        local time_diff=$((current_time - last_check))
+        
+        # 6小时 = 21600秒
+        if [[ $time_diff -lt 21600 ]]; then
+            return 0
+        fi
+    fi
+    
+    # 获取当前脚本的MD5
+    local current_md5
+    if command -v md5sum >/dev/null 2>&1; then
+        current_md5=$(md5sum "$0" 2>/dev/null | cut -d' ' -f1)
+    elif command -v md5 >/dev/null 2>&1; then
+        current_md5=$(md5 -q "$0" 2>/dev/null)
+    else
+        return 0
+    fi
+    
+    # 获取远程脚本的MD5（超时5秒）
+    local remote_md5
+    local remote_script
+    remote_script=$(curl -fsSL --connect-timeout 5 --max-time 10 "$REPO_URL/raw/main/ccs" 2>/dev/null)
+    
+    if [[ $? -eq 0 && -n "$remote_script" ]]; then
+        if command -v md5sum >/dev/null 2>&1; then
+            remote_md5=$(echo "$remote_script" | md5sum | cut -d' ' -f1)
+        elif command -v md5 >/dev/null 2>&1; then
+            remote_md5=$(echo "$remote_script" | md5)
+        fi
+        
+        # 更新检查缓存
+        echo "$current_md5" > "$VERSION_CACHE"
+        
+        # 如果MD5不同，提示更新
+        if [[ -n "$remote_md5" && "$current_md5" != "$remote_md5" ]]; then
+            echo
+            print_warning "检测到 CCS 有新版本可用！"
+            read -rp "$(print_color "$BOLD$WHITE" "是否立即更新? (Y/n): ")" update_confirm
+            
+            if [[ ! "$update_confirm" =~ ^[Nn]$ ]]; then
+                print_info "正在更新 CCS..."
+                
+                # 备份当前版本
+                local backup_file="${0}.backup.$(date +%Y%m%d_%H%M%S)"
+                cp "$0" "$backup_file"
+                
+                # 下载新版本
+                if echo "$remote_script" > "$0"; then
+                    chmod +x "$0"
+                    print_success "CCS 更新成功！"
+                    print_info "备份文件: $backup_file"
+                    echo
+                    print_info "重新启动 CCS..."
+                    echo
+                    exec "$0" "$@"
+                else
+                    print_error "更新失败，已恢复原版本"
+                    cp "$backup_file" "$0"
+                    rm -f "$backup_file"
+                fi
+            else
+                print_info "已跳过更新，下次启动时会再次检查"
+            fi
+            echo
+        fi
+    fi
+}
+
+# 强制更新
+force_update() {
+    print_title "手动更新 CCS"
+    
+    # 检查必要工具
+    if ! command -v curl >/dev/null 2>&1; then
+        print_error "需要 curl 工具来下载更新"
+        return 1
+    fi
+    
+    print_info "正在检查远程版本..."
+    
+    # 获取当前脚本的MD5
+    local current_md5
+    if command -v md5sum >/dev/null 2>&1; then
+        current_md5=$(md5sum "$0" 2>/dev/null | cut -d' ' -f1)
+    elif command -v md5 >/dev/null 2>&1; then
+        current_md5=$(md5 -q "$0" 2>/dev/null)
+    else
+        print_error "无法计算文件MD5，请安装 md5sum 或 md5 工具"
+        return 1
+    fi
+    
+    # 获取远程脚本
+    local remote_script
+    remote_script=$(curl -fsSL --connect-timeout 10 --max-time 30 "$REPO_URL/raw/main/ccs" 2>/dev/null)
+    
+    if [[ $? -ne 0 || -z "$remote_script" ]]; then
+        print_error "无法连接到 GitHub 或下载远程脚本"
+        print_info "请检查网络连接或稍后重试"
+        return 1
+    fi
+    
+    # 计算远程脚本的MD5
+    local remote_md5
+    if command -v md5sum >/dev/null 2>&1; then
+        remote_md5=$(echo "$remote_script" | md5sum | cut -d' ' -f1)
+    elif command -v md5 >/dev/null 2>&1; then
+        remote_md5=$(echo "$remote_script" | md5)
+    fi
+    
+    print_info "当前版本 MD5: $current_md5"
+    print_info "远程版本 MD5: $remote_md5"
+    
+    if [[ "$current_md5" == "$remote_md5" ]]; then
+        print_success "您已经使用的是最新版本！"
+        return 0
+    fi
+    
+    echo
+    print_warning "发现新版本，准备更新..."
+    read -rp "$(print_color "$BOLD$WHITE" "确认更新? (Y/n): ")" update_confirm
+    
+    if [[ "$update_confirm" =~ ^[Nn]$ ]]; then
+        print_info "更新已取消"
+        return 0
+    fi
+    
+    print_info "正在更新 CCS..."
+    
+    # 备份当前版本
+    local backup_file="${0}.backup.$(date +%Y%m%d_%H%M%S)"
+    if ! cp "$0" "$backup_file"; then
+        print_error "创建备份失败"
+        return 1
+    fi
+    
+    # 下载新版本
+    if echo "$remote_script" > "$0" && chmod +x "$0"; then
+        print_success "CCS 更新成功！"
+        print_info "备份文件: $backup_file"
+        
+        # 更新版本缓存
+        echo "$remote_md5" > "$VERSION_CACHE"
+        
+        echo
+        print_info "重新启动 CCS..."
+        echo
+        exec "$0" "${@:2}"
+    else
+        print_error "更新失败，正在恢复原版本..."
+        cp "$backup_file" "$0"
+        rm -f "$backup_file"
+        return 1
+    fi
 }
 
 # 创建默认模板文件
@@ -687,6 +859,7 @@ ${BOLD}用法:${NC}
   ccs delete                 删除配置
   ccs edit                   编辑配置
   ccs template               编辑 settings.json 模板
+  ccs update                 检查并更新到最新版本
   ccs list                   列出所有配置
   ccs help                   显示此帮助信息
 
@@ -725,6 +898,9 @@ main() {
         exit 1
     fi
     
+    # 检查更新（后台静默进行）
+    check_for_updates "$@"
+    
     # 解析命令行参数
     case "${1:-}" in
         "")
@@ -744,6 +920,9 @@ main() {
             ;;
         list)
             list_configs
+            ;;
+        update)
+            force_update "$@"
             ;;
         help|-h|--help)
             show_help
