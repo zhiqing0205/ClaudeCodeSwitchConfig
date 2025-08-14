@@ -30,8 +30,10 @@ Claude Config Switcher (CCS) 是一个功能强大、界面美观的命令行工
 - ➕ **完整管理**: 添加、删除、编辑、列出配置
 - 🤖 **Claude 集成**: 自动生成 Claude Code settings.json
 - 📁 **标准目录**: 配置存储在 ~/.claude/ 目录
-- 🖥️ **跨平台**: 兼容 Linux 和 macOS
-- 🚀 **一键安装**: 自动注册到 bashrc，即装即用
+- 🖥️ **跨平台**: 兼容 Linux 和 macOS，支持 bash/zsh
+- 🚀 **一键安装**: 在线安装，自动注册命令，即装即用
+- 📝 **模板系统**: 可自定义 settings.json 模板，支持变量替换
+- 🔄 **自动更新**: 智能检测新版本，一键更新到最新版
 
 ## 🚀 一键安装
 
@@ -41,9 +43,15 @@ Claude Config Switcher (CCS) 是一个功能强大、界面美观的命令行工
 curl -fsSL https://raw.githubusercontent.com/zhiqing0205/ClaudeCodeSwitchConfig/main/install-online.sh | bash
 ```
 
-安装完成后：
+**特色优势：**
+- ⚡ **极速安装**: 一行命令，30秒完成安装
+- 🎯 **智能检测**: 自动识别 bash/zsh，适配 Linux/macOS
+- 🚀 **即装即用**: 安装完成自动启动，无需手动配置
+- 🔧 **零依赖**: 无需额外安装任何工具或库
+
+安装完成后会自动启动，如需手动启动：
 ```bash
-source ~/.bashrc  # 重新加载配置
+source ~/.bashrc  # 或 ~/.zshrc (macOS)
 ccs              # 开始使用！
 ```
 
@@ -91,6 +99,12 @@ ccs edit
 # 删除配置  
 ccs delete
 
+# 自定义模板
+ccs template
+
+# 检查更新
+ccs update
+
 # 查看帮助
 ccs help
 ```
@@ -124,6 +138,7 @@ ccs help
 [a]dd     添加新配置
 [d]elete  删除配置
 [e]dit    编辑配置
+[t]emplate 编辑 settings.json 模板
 [l]ist    刷新配置列表
 [h]elp    显示帮助信息
 [q]uit    退出程序
@@ -189,13 +204,47 @@ ccs delete
 - 确认提示防止误删
 - 自动清理相关文件
 
+### 5. 自定义模板
+
+```bash
+ccs template
+```
+
+CCS 支持自定义 settings.json 模板，让您完全控制生成的配置文件：
+
+**模板变量：**
+- `{{API_KEY}}` - 当前配置的 API Key
+- `{{BASE_URL}}` - 当前配置的 Base URL
+- `{{CONFIG_NAME}}` - 当前配置的名称
+
+**使用场景：**
+- 自定义权限配置
+- 添加特定环境变量
+- 修改 Claude Code 行为设置
+- 个性化工作环境
+
+### 6. 自动更新
+
+```bash
+# 手动检查更新
+ccs update
+```
+
+**智能更新系统：**
+- 🔍 **自动检测**: 每次启动自动检查新版本（6小时缓存）
+- 🚀 **一键更新**: 检测到新版本时提示更新
+- 🛡️ **安全机制**: 自动备份，更新失败自动回滚
+- 🔄 **零中断**: 更新完成自动重启，保持工作流
+
 ## 📁 文件结构
 
 ```
 ~/.claude/
-├── keys.conf       # 配置文件(INI格式)
-├── settings.json   # Claude Code 设置文件(自动生成)
-└── current         # 当前激活的配置名称
+├── keys.conf         # 配置文件(INI格式)
+├── settings.json     # Claude Code 设置文件(自动生成)
+├── template.json     # settings.json 模板文件
+├── current           # 当前激活的配置名称
+└── .version_cache    # 版本检查缓存文件
 ```
 
 ### 配置文件格式
@@ -216,9 +265,43 @@ baseUrl = https://dev.anthropic.com
 apiKey = sk-ant-dev-xxxxx
 ```
 
+### 模板文件格式
+
+`~/.claude/template.json` 是用于生成 settings.json 的模板：
+
+```json
+{
+  "env": {
+    "ANTHROPIC_API_KEY": "{{API_KEY}}",
+    "ANTHROPIC_BASE_URL": "{{BASE_URL}}",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": 1
+  },
+  "permissions": {
+    "allow": [
+      "Bash(*)",
+      "LS(*)",
+      "Read(*)",
+      "Write(*)",
+      "Edit(*)",
+      "MultiEdit(*)",
+      "Glob(*)",
+      "Grep(*)",
+      "Task(*)",
+      "WebFetch(*)",
+      "WebSearch(*)",
+      "TodoWrite(*)",
+      "NotebookRead(*)",
+      "NotebookEdit(*)"
+    ],
+    "deny": []
+  },
+  "apiKeyHelper": "echo '{{API_KEY}}'"
+}
+```
+
 ### 自动生成的 settings.json
 
-当切换配置时，CCS 会自动生成 `~/.claude/settings.json`：
+当切换配置时，CCS 会自动使用模板生成 `~/.claude/settings.json`：
 
 ```json
 {
@@ -230,18 +313,14 @@ apiKey = sk-ant-dev-xxxxx
   "permissions": {
     "allow": [
       "Bash(*)",
+      "LS(*)",
       "Read(*)",
       "Write(*)",
       ...
     ],
     "deny": []
   },
-  "apiKeyHelper": "echo 'sk-ant-xxx'",
-  "statusLine": {
-    "type": "command",
-    "command": "echo '🤖 Claude [production]'",
-    "padding": 0
-  }
+  "apiKeyHelper": "echo 'sk-ant-xxx'"
 }
 ```
 
@@ -310,45 +389,31 @@ export_claude_config
 - **工具**: awk, grep, sed (系统通常自带)
 - **权限**: 能够写入 ~/.claude/ 目录和 ~/.bashrc 文件
 
-## 📦 安装方式
+## 📦 安装方式对比
 
-### 方式1: 一键安装 (推荐)
+| 安装方式 | 命令 | 优势 | 适用场景 |
+|---------|------|------|----------|
+| **在线一键安装** (推荐) | `curl -fsSL https://raw.githubusercontent.com/zhiqing0205/ClaudeCodeSwitchConfig/main/install-online.sh \| bash` | 自动下载最新版本<br>智能检测系统环境<br>零配置安装 | 首次安装<br>快速部署 |
+| **本地安装** | `git clone` + `./setup.sh` | 离线安装<br>可查看源码<br>支持自定义修改 | 开发调试<br>离线环境 |
 
-```bash
-./setup.sh
-```
+### 在线安装特色功能
 
-自动完成：
-- 创建 ~/.claude 目录
-- 注册 ccs 命令到 ~/.bashrc
-- 创建示例配置文件
-- 验证安装
-
-### 方式2: 手动安装
-
-```bash
-# 1. 创建目录
-mkdir -p ~/.claude
-
-# 2. 复制脚本
-cp ccs ~/.claude/
-chmod +x ~/.claude/ccs
-
-# 3. 添加别名到 ~/.bashrc
-echo "alias ccs='$HOME/.claude/ccs'" >> ~/.bashrc
-
-# 4. 重新加载配置
-source ~/.bashrc
-```
+- 🌍 **最新版本**: 直接从 GitHub 下载最新版本
+- 🎯 **智能适配**: 自动检测 Linux/macOS + bash/zsh
+- ⚡ **即装即用**: 安装完成自动启动 CCS
+- 🛡️ **安全检查**: 验证网络连接和系统兼容性
 
 ## 🗑️ 卸载
 
 ```bash
-# 使用安装脚本卸载
+# 在线安装用户
+curl -fsSL https://raw.githubusercontent.com/zhiqing0205/ClaudeCodeSwitchConfig/main/install-online.sh | bash -s -- --uninstall
+
+# 本地安装用户
 ./setup.sh --uninstall
 
-# 或手动删除
-sed -i '/alias ccs=/d' ~/.bashrc
+# 手动删除
+sed -i '/alias ccs=/d' ~/.bashrc  # 或 ~/.zshrc
 rm -rf ~/.claude
 ```
 
@@ -389,6 +454,37 @@ cp ~/.claude/keys.conf ~/.claude/keys.conf.backup
 cp ~/.claude/keys.conf.backup ~/.claude/keys.conf
 ```
 
+### 4. 模板定制技巧
+
+```bash
+# 编辑模板
+ccs template
+
+# 常用模板变量示例
+# {{API_KEY}}     - 替换为当前配置的 API Key
+# {{BASE_URL}}    - 替换为当前配置的 Base URL
+# {{CONFIG_NAME}} - 替换为当前配置名称
+
+# 添加自定义环境变量
+"env": {
+  "ANTHROPIC_API_KEY": "{{API_KEY}}",
+  "ANTHROPIC_BASE_URL": "{{BASE_URL}}",
+  "CUSTOM_VAR": "value-for-{{CONFIG_NAME}}"
+}
+```
+
+### 5. 更新管理
+
+```bash
+# 手动检查更新
+ccs update
+
+# 查看当前版本
+ccs help | grep -i version
+
+# 更新会自动备份当前版本，失败时自动回滚
+```
+
 ## 🤔 常见问题
 
 ### Q: 如何更新 API Key？
@@ -405,6 +501,18 @@ A: 不可以，同一时间只能激活一个配置。
 
 ### Q: 支持团队共享配置吗？
 A: 可以，将 `keys.conf` 文件共享给团队成员即可。
+
+### Q: 如何自定义 settings.json 格式？
+A: 使用 `ccs template` 命令编辑模板文件，支持变量替换。
+
+### Q: 更新失败了怎么办？
+A: CCS 会自动备份和回滚，也可以手动恢复备份文件。
+
+### Q: 支持哪些操作系统？
+A: 支持 Linux 和 macOS，自动检测 bash/zsh 环境。
+
+### Q: 一键安装安全吗？
+A: 脚本开源可审查，安装前会验证网络和系统兼容性。
 
 ## 🤝 贡献
 
