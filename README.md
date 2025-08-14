@@ -11,6 +11,10 @@
 </p>
 
 <p align="center">
+  <img src="ccs-preview.png" alt="CCS 预览截图" width="600">
+</p>
+
+<p align="center">
   <strong>一行命令安装：</strong><br>
   <code>curl -fsSL https://raw.githubusercontent.com/zhiqing0205/ClaudeCodeSwitchConfig/main/install-online.sh | bash</code>
 </p>
