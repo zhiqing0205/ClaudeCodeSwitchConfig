@@ -448,7 +448,7 @@ list_configs() {
     for config in "${configs[@]}"; do
         local status=""
         if [[ "$config" == "$current_config" ]]; then
-            status="${GREEN}${BOLD}[当前]${NC}"
+            status=" ${GREEN}${BOLD}[当前]${NC}"
         fi
         
         # 获取配置信息
@@ -462,9 +462,9 @@ list_configs() {
             api_key="未设置"
         fi
         
-        printf "${BOLD}${WHITE}%2d.${NC} ${CYAN}%-20s${NC} %s\n" "$i" "$config" "$status"
-        printf "    ${BLUE}Base URL:${NC} %s\n" "${base_url:-未设置}"
-        printf "    ${BLUE}API Key:${NC}  %s\n" "$api_key"
+        echo -e "${BOLD}${WHITE}$(printf '%2d.' "$i")${NC} ${CYAN}$(printf '%-20s' "$config")${NC}${status}"
+        echo -e "    ${BLUE}Base URL:${NC} ${base_url:-未设置}"
+        echo -e "    ${BLUE}API Key:${NC}  $api_key"
         echo
         i=$((i + 1))
     done
@@ -644,15 +644,20 @@ edit_config() {
     
     print_separator
     print_info "当前配置 '$config_to_edit' 的内容:"
+    echo "  配置名称: $config_to_edit"
     echo "  Base URL: $current_base_url"
     echo "  API Key:  ...${current_api_key: -4}"
     echo
     
-    local new_base_url new_api_key
+    local new_config_name new_base_url new_api_key
+    read -rp "$(print_color "$BOLD$WHITE" "新的配置名称 (回车保持不变): ")" new_config_name
     read -rp "$(print_color "$BOLD$WHITE" "新的 Base URL (回车保持不变): ")" new_base_url
     read -rp "$(print_color "$BOLD$WHITE" "新的 API Key (回车保持不变): ")" new_api_key
     
     # 如果用户没输入，保持原值
+    if [[ -z "$new_config_name" ]]; then
+        new_config_name="$config_to_edit"
+    fi
     if [[ -z "$new_base_url" ]]; then
         new_base_url="$current_base_url"
     fi
@@ -660,16 +665,28 @@ edit_config() {
         new_api_key="$current_api_key"
     fi
     
+    # 检查新配置名称是否与现有配置重复（但不是自己）
+    if [[ "$new_config_name" != "$config_to_edit" ]] && config_exists "$new_config_name"; then
+        print_error "配置名称 '$new_config_name' 已存在，请选择其他名称"
+        return 1
+    fi
+    
+    # 验证配置名称格式
+    if [[ ! "$new_config_name" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+        print_error "配置名称只能包含字母、数字、下划线和连字符"
+        return 1
+    fi
+    
     # 使用临时文件替换配置
     local temp_file
     temp_file=$(mktemp)
     
-    awk -v config="$config_to_edit" -v new_base_url="$new_base_url" -v new_api_key="$new_api_key" '
+    awk -v config="$config_to_edit" -v new_config="$new_config_name" -v new_base_url="$new_base_url" -v new_api_key="$new_api_key" '
         /^\[.*\]$/ {
             section = $0
             gsub(/[\[\]]/, "", section)
             if (section == config) {
-                print "["config"]"
+                print "["new_config"]"
                 print "baseUrl = " new_base_url
                 print "apiKey = " new_api_key
                 skip = 1
@@ -684,7 +701,23 @@ edit_config() {
     ' "$KEYS_FILE" > "$temp_file"
     
     mv "$temp_file" "$KEYS_FILE"
-    print_success "配置 '$config_to_edit' 编辑成功！"
+    
+    # 如果修改的是当前配置，需要更新current文件
+    local current_config
+    current_config=$(get_current_config)
+    if [[ "$current_config" == "$config_to_edit" ]]; then
+        echo "$new_config_name" > "$CURRENT_FILE"
+        # 重新生成settings.json
+        generate_settings "$new_config_name"
+        print_info "已更新当前配置为 '$new_config_name'"
+    fi
+    
+    # 显示修改结果
+    if [[ "$new_config_name" != "$config_to_edit" ]]; then
+        print_success "配置 '$config_to_edit' 已重命名为 '$new_config_name' 并更新成功！"
+    else
+        print_success "配置 '$config_to_edit' 编辑成功！"
+    fi
 }
 
 # 编辑模板
