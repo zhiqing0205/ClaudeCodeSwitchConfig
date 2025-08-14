@@ -737,24 +737,70 @@ edit_template() {
     print_warning "请确保 JSON 格式正确，否则可能导致配置生成失败"
     echo
     
-    # 选择编辑器
-    local editor=""
-    if command -v nano >/dev/null 2>&1; then
-        editor="nano"
-    elif command -v vim >/dev/null 2>&1; then
-        editor="vim"
-    elif command -v vi >/dev/null 2>&1; then
-        editor="vi"
-    else
-        print_error "未找到可用的编辑器 (nano, vim, vi)"
+    # 检测可用的编辑器
+    local available_editors=()
+    local editor_names=()
+    
+    # 优先使用环境变量 EDITOR 指定的编辑器
+    if [[ -n "$EDITOR" ]] && command -v "$EDITOR" >/dev/null 2>&1; then
+        available_editors+=("$EDITOR")
+        editor_names+=("$EDITOR (系统默认编辑器)")
+    fi
+    
+    # 添加其他常见编辑器（避免重复）
+    local common_editors=("nano" "vim" "vi" "code" "emacs" "gedit")
+    local common_names=("Nano (易用的文本编辑器)" "Vim (高级文本编辑器)" "Vi (经典文本编辑器)" "VS Code (图形界面编辑器)" "Emacs (功能强大的编辑器)" "Gedit (GNOME文本编辑器)")
+    
+    for i in "${!common_editors[@]}"; do
+        local cmd="${common_editors[$i]}"
+        if command -v "$cmd" >/dev/null 2>&1; then
+            # 检查是否已经添加过（避免重复）
+            local already_added=false
+            for existing in "${available_editors[@]}"; do
+                if [[ "$existing" == "$cmd" ]]; then
+                    already_added=true
+                    break
+                fi
+            done
+            
+            if [[ "$already_added" == "false" ]]; then
+                available_editors+=("$cmd")
+                editor_names+=("${common_names[$i]}")
+            fi
+        fi
+    done
+    
+    if [[ ${#available_editors[@]} -eq 0 ]]; then
+        print_error "未找到可用的编辑器"
+        print_info "请安装以下任意一个编辑器: nano, vim, vi, code, emacs, gedit"
         return 1
     fi
     
-    read -rp "$(print_color "$BOLD$WHITE" "按 Enter 键使用 $editor 编辑模板，或输入 'c' 取消: ")" confirm
-    if [[ "$confirm" =~ ^[Cc]$ ]]; then
-        print_info "已取消模板编辑"
-        return 0
-    fi
+    # 显示可用编辑器列表
+    print_separator
+    print_info "检测到以下可用编辑器:"
+    for i in "${!available_editors[@]}"; do
+        echo -e "${BOLD}${WHITE}$((i + 1)).${NC} ${CYAN}${editor_names[$i]}${NC}"
+    done
+    echo
+    
+    # 让用户选择编辑器
+    local editor=""
+    while true; do
+        read -rp "$(print_color "$BOLD$WHITE" "请选择编辑器 (输入数字), 或输入 'c' 取消: ")" choice
+        
+        if [[ "$choice" =~ ^[Cc]$ ]]; then
+            print_info "已取消模板编辑"
+            return 0
+        elif [[ "$choice" =~ ^[0-9]+$ ]] && [[ "$choice" -ge 1 && "$choice" -le ${#available_editors[@]} ]]; then
+            editor="${available_editors[$((choice - 1))]}"
+            break
+        else
+            print_error "无效选择，请输入 1-${#available_editors[@]} 或 'c'"
+        fi
+    done
+    
+    print_info "将使用 ${editor} 编辑模板..."
     
     # 备份原模板
     local backup_file="${TEMPLATE_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
@@ -762,7 +808,60 @@ edit_template() {
     print_info "已创建模板备份: $backup_file"
     
     # 启动编辑器
-    if "$editor" "$TEMPLATE_FILE"; then
+    local edit_success=false
+    case "$editor" in
+        "code")
+            # VS Code 需要等待用户完成编辑
+            print_info "正在启动 VS Code，请编辑完成后关闭文件..."
+            if "$editor" --wait "$TEMPLATE_FILE"; then
+                edit_success=true
+            fi
+            ;;
+        "gedit")
+            # Gedit 图形编辑器
+            print_info "正在启动 Gedit..."
+            if "$editor" "$TEMPLATE_FILE"; then
+                edit_success=true
+            fi
+            ;;
+        "emacs")
+            # Emacs 编辑器
+            print_info "正在启动 Emacs (使用 Ctrl+X Ctrl+C 退出)..."
+            if "$editor" "$TEMPLATE_FILE"; then
+                edit_success=true
+            fi
+            ;;
+        "vim")
+            # Vim 编辑器
+            print_info "正在启动 Vim (使用 :wq 保存并退出)..."
+            if "$editor" "$TEMPLATE_FILE"; then
+                edit_success=true
+            fi
+            ;;
+        "vi")
+            # Vi 编辑器  
+            print_info "正在启动 Vi (使用 :wq 保存并退出)..."
+            if "$editor" "$TEMPLATE_FILE"; then
+                edit_success=true
+            fi
+            ;;
+        "nano")
+            # Nano 编辑器
+            print_info "正在启动 Nano (使用 Ctrl+X 退出)..."
+            if "$editor" "$TEMPLATE_FILE"; then
+                edit_success=true
+            fi
+            ;;
+        *)
+            # 其他编辑器的默认处理
+            print_info "正在启动 $editor..."
+            if "$editor" "$TEMPLATE_FILE"; then
+                edit_success=true
+            fi
+            ;;
+    esac
+    
+    if [[ "$edit_success" == "true" ]]; then
         # 验证 JSON 格式
         if command -v python3 >/dev/null 2>&1; then
             if python3 -m json.tool "$TEMPLATE_FILE" >/dev/null 2>&1; then
