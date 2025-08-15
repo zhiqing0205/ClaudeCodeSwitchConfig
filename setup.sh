@@ -267,9 +267,9 @@ EOF
 verify_installation() {
     print_info "验证安装..."
     
-    # 检查bashrc中的alias
-    if ! grep -q "alias ccs=" "$BASHRC_FILE" 2>/dev/null; then
-        print_error "CCS 命令未正确注册到 ~/.bashrc"
+    # 检查shell配置文件中的alias
+    if ! grep -q "alias ccs=" "$SHELL_RC_FILE" 2>/dev/null; then
+        print_error "CCS 命令未正确注册到 ~/${SHELL_RC_FILE##*/}"
         return 1
     fi
     
@@ -303,7 +303,7 @@ show_next_steps() {
     print_color "$GREEN" "  安装完成后 CCS 将自动启动！"
     echo
     print_color "$YELLOW" "  如果自动启动失败，请手动运行："
-    print_color "$WHITE" "     source ~/.bashrc         # 重新加载配置"
+    print_color "$WHITE" "     source ~/${SHELL_RC_FILE##*/}         # 重新加载配置"
     print_color "$WHITE" "     ccs                      # 启动 CCS"
     echo
     print_color "$YELLOW" "  常用 CCS 命令："
@@ -347,23 +347,23 @@ uninstall() {
         exit 0
     fi
     
-    # 从bashrc中移除alias
-    if grep -q "alias ccs=" "$BASHRC_FILE" 2>/dev/null; then
+    # 从shell配置文件中移除alias
+    if grep -q "alias ccs=" "$SHELL_RC_FILE" 2>/dev/null; then
         # 创建备份
-        cp "$BASHRC_FILE" "${BASHRC_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
+        cp "$SHELL_RC_FILE" "${SHELL_RC_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
         
         # 移除CCS相关行
-        sed -i '/# Claude Config Switcher (CCS)/d' "$BASHRC_FILE"
-        sed -i '/alias ccs=/d' "$BASHRC_FILE"
-        sed -i '/# GitHub.*claude-config-switcher/d' "$BASHRC_FILE"
+        sed -i '/# Claude Config Switcher (CCS)/d' "$SHELL_RC_FILE"
+        sed -i '/alias ccs=/d' "$SHELL_RC_FILE"
+        sed -i '/# GitHub.*claude-config-switcher/d' "$SHELL_RC_FILE"
         
         # 清理多余的空行
-        sed -i '/^$/N;/^\n$/d' "$BASHRC_FILE"
+        sed -i '/^$/N;/^\n$/d' "$SHELL_RC_FILE"
         
-        print_success "已从 ~/.bashrc 中移除 CCS 命令注册"
-        print_info "已创建 ~/.bashrc 备份"
+        print_success "已从 ~/${SHELL_RC_FILE##*/} 中移除 CCS 命令注册"
+        print_info "已创建 ~/${SHELL_RC_FILE##*/} 备份"
     else
-        print_info "未在 ~/.bashrc 中找到 CCS 注册"
+        print_info "未在 ~/${SHELL_RC_FILE##*/} 中找到 CCS 注册"
     fi
     
     print_color "$GREEN" "CCS 命令注册已成功卸载"
@@ -375,7 +375,7 @@ uninstall() {
         print_success "配置文件已删除"
     fi
     
-    print_info "请运行 'source ~/.bashrc' 或重新打开终端以使更改生效"
+    print_info "请运行 'source ~/${SHELL_RC_FILE##*/}' 或重新打开终端以使更改生效"
 }
 
 # 主函数
@@ -416,20 +416,30 @@ main() {
     if verify_installation; then
         show_next_steps
         
+        # 获取ccs脚本的绝对路径
+        local ccs_path
+        ccs_path=$(realpath "$CCS_SCRIPT")
+        
         # 自动启动CCS
         print_info "正在启动 CCS..."
         echo
         
-        # 直接调用CCS脚本
-        if [[ -x "$CCS_SCRIPT" ]]; then
+        # 检查ccs脚本是否可执行
+        if [[ -x "$ccs_path" ]]; then
             print_success "安装完成！正在启动 CCS..."
             echo
-            # 使用exec替换当前进程，用户退出ccs时直接结束安装脚本
-            exec "$CCS_SCRIPT"
+            
+            # 导出必要的环境变量供ccs使用
+            export CLAUDE_DIR="$CLAUDE_DIR"
+            export KEYS_FILE="$KEYS_FILE"
+            export TEMPLATE_FILE="$TEMPLATE_FILE"
+            
+            # 直接执行ccs脚本（无需source shell配置文件）
+            exec "$ccs_path"
         else
             print_warning "无法自动启动 CCS，请手动运行："
-            print_color "$CYAN" "source ~/.bashrc && ccs"
-            print_info "或者直接运行: $CCS_SCRIPT"
+            print_color "$CYAN" "source ~/${SHELL_RC_FILE##*/} && ccs"
+            print_info "或者直接运行: $ccs_path"
         fi
     else
         print_error "安装过程中出现问题"
