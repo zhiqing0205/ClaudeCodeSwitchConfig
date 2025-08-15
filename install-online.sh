@@ -484,21 +484,39 @@ main() {
     if verify_installation; then
         show_next_steps
         
-        # 自动source并执行ccs
-        print_info "正在加载配置并启动 CCS..."
+        # 提示用户如何使用
+        echo
+        print_success "安装完成！"
+        print_info "要使用 CCS，请运行以下命令之一："
+        echo
+        print_color "$BOLD$WHITE" "  方法 1：重新加载 shell 配置并运行"
+        print_color "$CYAN" "    source ~/${SHELL_RC_FILE##*/} && ccs"
+        echo
+        print_color "$BOLD$WHITE" "  方法 2：直接运行 CCS 脚本"
+        print_color "$CYAN" "    $CCS_SCRIPT"
+        echo
+        print_color "$BOLD$WHITE" "  方法 3：重新打开终端窗口，然后运行"
+        print_color "$CYAN" "    ccs"
         echo
         
-        # 使用更可靠的方式source配置文件并执行ccs
-        # 直接调用CCS脚本而不依赖alias
-        if [[ -x "$CCS_SCRIPT" ]]; then
-            print_success "配置已加载！正在启动 CCS..."
-            echo
-            # 使用exec替换当前进程，用户退出ccs时直接结束安装脚本
-            exec "$CCS_SCRIPT"
+        # 询问是否立即启动
+        read -rp "$(print_color "$BOLD$WHITE" "是否现在就启动 CCS? (Y/n): ")" start_now
+        
+        if [[ ! "$start_now" =~ ^[Nn]$ ]]; then
+            if [[ -x "$CCS_SCRIPT" ]]; then
+                print_info "正在启动 CCS..."
+                echo
+                # 导出必要的环境变量
+                export CLAUDE_DIR="$CLAUDE_DIR"
+                export KEYS_FILE="$KEYS_FILE"
+                export TEMPLATE_FILE="$TEMPLATE_FILE"
+                # 直接运行 CCS 脚本
+                exec "$CCS_SCRIPT"
+            else
+                print_error "CCS 脚本不可执行"
+            fi
         else
-            print_warning "无法自动启动 CCS，请手动运行："
-            print_color "$CYAN" "source ~/${SHELL_RC_FILE##*/} && ccs"
-            print_info "或者直接运行: $CCS_SCRIPT"
+            print_info "感谢使用 Claude Config Switcher！"
         fi
     else
         print_error "安装过程中出现问题"
