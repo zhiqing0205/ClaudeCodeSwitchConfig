@@ -170,6 +170,9 @@ init_claude_dir() {
     return 0
 }
 
+# 要同步的文件列表
+UPDATE_FILES=("ccs" "setup.sh" "install-online.sh")
+
 # 检查更新
 check_for_updates() {
     # 静默模式，避免干扰用户体验
@@ -194,69 +197,86 @@ check_for_updates() {
         fi
     fi
     
-    # 获取当前脚本的MD5
-    local current_md5
+    # 检查MD5工具
+    local md5_cmd
     if command -v md5sum >/dev/null 2>&1; then
-        current_md5=$(md5sum "$0" 2>/dev/null | cut -d' ' -f1)
+        md5_cmd="md5sum"
     elif command -v md5 >/dev/null 2>&1; then
-        current_md5=$(md5 -q "$0" 2>/dev/null)
+        md5_cmd="md5 -q"
     else
         return 0
     fi
     
-    # 获取远程脚本的MD5（超时5秒）
-    local remote_md5
-    local remote_script
-    remote_script=$(curl -fsSL --connect-timeout 5 --max-time 10 "$REPO_URL/raw/main/ccs" 2>/dev/null)
+    # 检查所有文件是否有更新
+    local has_update=false
+    local updated_files=()
     
-    if [[ $? -eq 0 && -n "$remote_script" ]]; then
-        if command -v md5sum >/dev/null 2>&1; then
-            remote_md5=$(echo "$remote_script" | md5sum | cut -d' ' -f1)
-        elif command -v md5 >/dev/null 2>&1; then
-            remote_md5=$(echo "$remote_script" | md5)
+    for file in "${UPDATE_FILES[@]}"; do
+        # 跳过不存在的本地文件（可能是新文件）
+        if [[ ! -f "$file" ]]; then
+            has_update=true
+            updated_files+=("$file [新文件]")
+            continue
         fi
         
-        # 更新检查缓存
-        echo "$current_md5" > "$VERSION_CACHE"
+        # 获取本地文件MD5
+        local local_md5
+        if [[ "$md5_cmd" == "md5sum" ]]; then
+            local_md5=$($md5_cmd "$file" 2>/dev/null | cut -d' ' -f1)
+        else
+            local_md5=$($md5_cmd "$file" 2>/dev/null)
+        fi
         
-        # 如果MD5不同，提示更新
-        if [[ -n "$remote_md5" && "$current_md5" != "$remote_md5" ]]; then
-            echo
-            print_warning "检测到 CCS 有新版本可用！"
-            read -rp "$(print_color "$BOLD$WHITE" "是否立即更新? (Y/n): ")" update_confirm
-            
-            if [[ ! "$update_confirm" =~ ^[Nn]$ ]]; then
-                print_info "正在更新 CCS..."
-                
-                # 备份当前版本
-                local backup_file="${0}.backup.$(date +%Y%m%d_%H%M%S)"
-                cp "$0" "$backup_file"
-                
-                # 下载新版本
-                if echo "$remote_script" > "$0"; then
-                    chmod +x "$0"
-                    print_success "CCS 更新成功！"
-                    print_info "备份文件: $backup_file"
-                    echo
-                    print_info "重新启动 CCS..."
-                    echo
-                    exec "$0" "$@"
-                else
-                    print_error "更新失败，已恢复原版本"
-                    cp "$backup_file" "$0"
-                    rm -f "$backup_file"
-                fi
+        # 获取远程文件MD5
+        local remote_content
+        remote_content=$(curl -fsSL --connect-timeout 5 --max-time 10 "$REPO_URL/raw/main/$file" 2>/dev/null)
+        
+        if [[ $? -eq 0 && -n "$remote_content" ]]; then
+            local remote_md5
+            if [[ "$md5_cmd" == "md5sum" ]]; then
+                remote_md5=$(echo "$remote_content" | $md5_cmd | cut -d' ' -f1)
             else
-                print_info "已跳过更新，下次启动时会再次检查"
+                remote_md5=$(echo "$remote_content" | $md5_cmd)
             fi
-            echo
+            
+            # 比较MD5
+            if [[ -n "$remote_md5" && "$local_md5" != "$remote_md5" ]]; then
+                has_update=true
+                updated_files+=("$file")
+            fi
         fi
+    done
+    
+    # 更新检查缓存
+    date +%s > "$VERSION_CACHE"
+    
+    # 如果有更新，提示用户
+    if [[ "$has_update" == true ]]; then
+        echo
+        print_warning "检测到以下文件有新版本可用："
+        for file in "${updated_files[@]}"; do
+            echo "  - $file"
+        done
+        echo
+        read -rp "$(print_color "$BOLD$WHITE" "是否立即更新? (Y/n): ")" update_confirm
+        
+        if [[ ! "$update_confirm" =~ ^[Nn]$ ]]; then
+            # 调用强制更新函数
+            force_update "--auto"
+        else
+            print_info "已跳过更新，下次启动时会再次检查"
+        fi
+        echo
     fi
 }
 
 # 强制更新
 force_update() {
-    print_title "手动更新 CCS"
+    local is_auto="${1:-}"
+    
+    if [[ "$is_auto" != "--auto" ]]; then
+        print_title "手动更新 CCS"
+    fi
     
     # 检查必要工具
     if ! command -v curl >/dev/null 2>&1; then
@@ -266,79 +286,121 @@ force_update() {
     
     print_info "正在检查远程版本..."
     
-    # 获取当前脚本的MD5
-    local current_md5
+    # 检查MD5工具
+    local md5_cmd
     if command -v md5sum >/dev/null 2>&1; then
-        current_md5=$(md5sum "$0" 2>/dev/null | cut -d' ' -f1)
+        md5_cmd="md5sum"
     elif command -v md5 >/dev/null 2>&1; then
-        current_md5=$(md5 -q "$0" 2>/dev/null)
+        md5_cmd="md5 -q"
     else
         print_error "无法计算文件MD5，请安装 md5sum 或 md5 工具"
         return 1
     fi
     
-    # 获取远程脚本
-    local remote_script
-    remote_script=$(curl -fsSL --connect-timeout 10 --max-time 30 "$REPO_URL/raw/main/ccs" 2>/dev/null)
+    # 创建备份目录
+    local backup_dir=".ccs_backup_$(date +%Y%m%d_%H%M%S)"
+    mkdir -p "$backup_dir"
     
-    if [[ $? -ne 0 || -z "$remote_script" ]]; then
-        print_error "无法连接到 GitHub 或下载远程脚本"
-        print_info "请检查网络连接或稍后重试"
-        return 1
-    fi
+    # 统计需要更新的文件
+    local updated_files=()
+    local failed_files=()
+    local new_files=()
     
-    # 计算远程脚本的MD5
-    local remote_md5
-    if command -v md5sum >/dev/null 2>&1; then
-        remote_md5=$(echo "$remote_script" | md5sum | cut -d' ' -f1)
-    elif command -v md5 >/dev/null 2>&1; then
-        remote_md5=$(echo "$remote_script" | md5)
-    fi
-    
-    print_info "当前版本 MD5: $current_md5"
-    print_info "远程版本 MD5: $remote_md5"
-    
-    if [[ "$current_md5" == "$remote_md5" ]]; then
-        print_success "您已经使用的是最新版本！"
-        return 0
-    fi
+    for file in "${UPDATE_FILES[@]}"; do
+        print_info "检查文件: $file"
+        
+        # 获取远程文件
+        local remote_content
+        remote_content=$(curl -fsSL --connect-timeout 10 --max-time 30 "$REPO_URL/raw/main/$file" 2>/dev/null)
+        
+        if [[ $? -ne 0 || -z "$remote_content" ]]; then
+            print_warning "无法下载: $file"
+            failed_files+=("$file")
+            continue
+        fi
+        
+        # 如果本地文件不存在，标记为新文件
+        if [[ ! -f "$file" ]]; then
+            new_files+=("$file")
+            echo "$remote_content" > "$file"
+            chmod +x "$file"
+            print_success "新增文件: $file"
+            continue
+        fi
+        
+        # 计算MD5比较
+        local local_md5 remote_md5
+        if [[ "$md5_cmd" == "md5sum" ]]; then
+            local_md5=$($md5_cmd "$file" 2>/dev/null | cut -d' ' -f1)
+            remote_md5=$(echo "$remote_content" | $md5_cmd | cut -d' ' -f1)
+        else
+            local_md5=$($md5_cmd "$file" 2>/dev/null)
+            remote_md5=$(echo "$remote_content" | $md5_cmd)
+        fi
+        
+        # 如果MD5不同，更新文件
+        if [[ "$local_md5" != "$remote_md5" ]]; then
+            # 备份原文件
+            cp "$file" "$backup_dir/$file.backup"
+            
+            # 更新文件
+            echo "$remote_content" > "$file"
+            chmod +x "$file"
+            
+            updated_files+=("$file")
+            print_success "已更新: $file"
+        else
+            print_info "已是最新: $file"
+        fi
+    done
     
     echo
-    print_warning "发现新版本，准备更新..."
-    read -rp "$(print_color "$BOLD$WHITE" "确认更新? (Y/n): ")" update_confirm
     
-    if [[ "$update_confirm" =~ ^[Nn]$ ]]; then
-        print_info "更新已取消"
-        return 0
-    fi
-    
-    print_info "正在更新 CCS..."
-    
-    # 备份当前版本
-    local backup_file="${0}.backup.$(date +%Y%m%d_%H%M%S)"
-    if ! cp "$0" "$backup_file"; then
-        print_error "创建备份失败"
-        return 1
-    fi
-    
-    # 下载新版本
-    if echo "$remote_script" > "$0" && chmod +x "$0"; then
-        print_success "CCS 更新成功！"
-        print_info "备份文件: $backup_file"
+    # 显示更新结果
+    if [[ ${#updated_files[@]} -gt 0 || ${#new_files[@]} -gt 0 ]]; then
+        print_success "更新完成！"
+        
+        if [[ ${#updated_files[@]} -gt 0 ]]; then
+            print_info "更新的文件 (${#updated_files[@]}):"
+            for file in "${updated_files[@]}"; do
+                echo "  - $file"
+            done
+        fi
+        
+        if [[ ${#new_files[@]} -gt 0 ]]; then
+            print_info "新增的文件 (${#new_files[@]}):"
+            for file in "${new_files[@]}"; do
+                echo "  - $file"
+            done
+        fi
+        
+        print_info "备份目录: $backup_dir"
         
         # 更新版本缓存
-        echo "$remote_md5" > "$VERSION_CACHE"
+        date +%s > "$VERSION_CACHE"
         
-        echo
-        print_info "重新启动 CCS..."
-        echo
-        exec "$0" "${@:2}"
+        # 如果更新了ccs脚本本身，重新启动
+        if [[ " ${updated_files[@]} " =~ " ccs " ]]; then
+            echo
+            print_info "CCS 脚本已更新，正在重新启动..."
+            echo
+            exec "$0" "${@:2}"
+        fi
     else
-        print_error "更新失败，正在恢复原版本..."
-        cp "$backup_file" "$0"
-        rm -f "$backup_file"
-        return 1
+        if [[ ${#failed_files[@]} -gt 0 ]]; then
+            print_warning "部分文件更新失败:"
+            for file in "${failed_files[@]}"; do
+                echo "  - $file"
+            done
+        else
+            print_success "所有文件都已是最新版本！"
+        fi
+        
+        # 清理空的备份目录
+        rmdir "$backup_dir" 2>/dev/null
     fi
+    
+    return 0
 }
 
 # 创建默认模板文件
@@ -991,7 +1053,7 @@ ${BOLD}用法:${NC}
   ccs delete                 删除配置
   ccs edit                   编辑配置
   ccs template               编辑 settings.json 模板
-  ccs update                 检查并更新到最新版本
+  ccs update                 检查并更新CCS到最新版本
   ccs list                   列出所有配置
   ccs help                   显示此帮助信息
 

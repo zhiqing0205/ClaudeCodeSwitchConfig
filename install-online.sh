@@ -155,20 +155,62 @@ create_claude_dir() {
     fi
 }
 
-# 下载CCS脚本
-download_ccs() {
-    print_info "下载最新版本的 CCS 脚本..."
+# 下载CCS相关文件
+download_ccs_files() {
+    print_info "下载最新版本的 CCS 文件..."
     
-    local temp_file
-    temp_file=$(mktemp)
+    # 要下载的文件列表
+    local files=("ccs" "setup.sh")
+    local success_count=0
+    local failed_files=()
     
-    if curl -fsSL "$RAW_URL/ccs" -o "$temp_file"; then
-        mv "$temp_file" "$CCS_SCRIPT"
-        chmod +x "$CCS_SCRIPT"
-        print_success "CCS 脚本下载完成: $CCS_SCRIPT"
+    for file in "${files[@]}"; do
+        print_info "正在下载: $file"
+        
+        local temp_file
+        temp_file=$(mktemp)
+        
+        if curl -fsSL "$RAW_URL/$file" -o "$temp_file"; then
+            # 确定目标路径
+            local target_path
+            if [[ "$file" == "ccs" ]]; then
+                target_path="$CCS_SCRIPT"
+            else
+                target_path="$CLAUDE_DIR/$file"
+            fi
+            
+            mv "$temp_file" "$target_path"
+            chmod +x "$target_path"
+            print_success "已下载: $file -> $target_path"
+            success_count=$((success_count + 1))
+        else
+            print_warning "下载失败: $file"
+            failed_files+=("$file")
+            rm -f "$temp_file"
+        fi
+    done
+    
+    echo
+    
+    # 显示下载结果
+    if [[ $success_count -eq ${#files[@]} ]]; then
+        print_success "所有文件下载完成"
+    elif [[ $success_count -gt 0 ]]; then
+        print_warning "部分文件下载成功 ($success_count/${#files[@]})"
+        if [[ ${#failed_files[@]} -gt 0 ]]; then
+            print_info "下载失败的文件:"
+            for file in "${failed_files[@]}"; do
+                echo "  - $file"
+            done
+        fi
     else
-        print_error "下载 CCS 脚本失败"
-        rm -f "$temp_file"
+        print_error "所有文件下载失败"
+        exit 1
+    fi
+    
+    # 至少需要ccs脚本成功下载
+    if [[ ! -f "$CCS_SCRIPT" ]]; then
+        print_error "CCS 主脚本下载失败，无法继续安装"
         exit 1
     fi
 }
@@ -434,7 +476,7 @@ main() {
     # 执行安装步骤
     check_requirements
     create_claude_dir
-    download_ccs
+    download_ccs_files
     register_ccs_command
     create_sample_configs
     create_default_template
