@@ -50,6 +50,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
+WHITE='\033[0;37m'
 BOLD='\033[1m'
 NC='\033[0m'
 
@@ -497,9 +498,19 @@ main() {
         print_color "$CYAN" "    ccs"
         echo
         
-        # 在线安装默认不自动启动，避免交互问题
-        print_info "在线安装完成，请手动运行上述命令来使用 CCS"
+        # 为当前终端会话创建临时 ccs 命令
+        print_info "为当前终端会话创建临时 ccs 命令..."
         
+        # 创建临时的 ccs 命令
+        if [[ -x "$CCS_SCRIPT" ]]; then
+            alias ccs="$CCS_SCRIPT"
+            print_success "临时 ccs 命令已创建，可以直接运行 'ccs'"
+            echo
+            print_info "注意：这个临时命令只在当前终端会话中有效"
+            print_info "重新打开终端后，请使用正常的 'ccs' 命令"
+        fi
+        
+        echo
         # 只在终端环境下才显示询问
         if [[ -t 0 ]]; then
             read -rp "$(print_color "$BOLD$WHITE" "是否现在就启动 CCS? (Y/n): ")" start_now
