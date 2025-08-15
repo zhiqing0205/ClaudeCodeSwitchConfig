@@ -986,6 +986,7 @@ interactive_menu() {
         printf "${CYAN}[t]emplate${NC} 编辑 settings.json 模板\n"
         printf "${CYAN}[l]ist${NC}    刷新配置列表\n"
         printf "${CYAN}[h]elp${NC}    显示帮助信息\n"
+        printf "${CYAN}[u]ninstall${NC} 卸载 CCS（保留配置）\n"
         printf "${CYAN}[q]uit${NC}    退出程序\n"
         print_separator
         
@@ -1027,6 +1028,9 @@ interactive_menu() {
                 show_help
                 read -rp "$(print_color "$CYAN" "按 Enter 键继续...")"
                 ;;
+            u|uninstall)
+                uninstall_ccs
+                ;;
             q|quit)
                 print_info "感谢使用 Claude Config Switcher！"
                 exit 0
@@ -1037,6 +1041,110 @@ interactive_menu() {
                 ;;
         esac
     done
+}
+
+# 卸载 CCS
+uninstall_ccs() {
+    clear
+    print_title "卸载 Claude Config Switcher"
+    
+    print_warning "即将卸载 CCS，这将："
+    echo "  - 移除 ccs 命令注册"
+    echo "  - 删除 CCS 脚本文件"
+    echo "  - 删除模板和设置文件"
+    echo
+    print_info "以下内容将被保留："
+    echo "  - API 配置文件 (keys.conf)"
+    echo "  - 备份文件"
+    echo
+    
+    read -rp "$(print_color "$BOLD$WHITE" "确认卸载 CCS? (y/N): ")" confirm
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+        print_info "卸载已取消"
+        return 0
+    fi
+    
+    # 检测shell配置文件
+    local shell_rc_file
+    if [[ "$SHELL" == */zsh ]]; then
+        shell_rc_file="${HOME}/.zshrc"
+    else
+        shell_rc_file="${HOME}/.bashrc"
+    fi
+    
+    # 从 shell 配置文件中移除 alias
+    if [[ -f "$shell_rc_file" ]] && grep -q "alias ccs=" "$shell_rc_file" 2>/dev/null; then
+        print_info "正在从 ~/${shell_rc_file##*/} 中移除 ccs 命令..."
+        
+        # 创建备份
+        cp "$shell_rc_file" "${shell_rc_file}.backup.$(date +%Y%m%d_%H%M%S)"
+        
+        # 移除CCS相关行
+        sed -i '/# Claude Config Switcher (CCS)/d' "$shell_rc_file"
+        sed -i '/alias ccs=/d' "$shell_rc_file"
+        sed -i '/# GitHub.*ClaudeCodeSwitchConfig/d' "$shell_rc_file"
+        
+        # 清理多余的空行
+        sed -i '/^$/N;/^\n$/d' "$shell_rc_file"
+        
+        print_success "已从 ~/${shell_rc_file##*/} 中移除 ccs 命令"
+    fi
+    
+    # 删除文件（但保留 keys.conf）
+    local files_to_remove=()
+    
+    # 删除设置和模板文件
+    if [[ -f "$SETTINGS_FILE" ]]; then
+        rm -f "$SETTINGS_FILE"
+        files_to_remove+=("settings.json")
+    fi
+    
+    if [[ -f "$TEMPLATE_FILE" ]]; then
+        rm -f "$TEMPLATE_FILE"
+        files_to_remove+=("template.json")
+    fi
+    
+    if [[ -f "$CURRENT_FILE" ]]; then
+        rm -f "$CURRENT_FILE"
+        files_to_remove+=(".current")
+    fi
+    
+    if [[ -f "$VERSION_CACHE" ]]; then
+        rm -f "$VERSION_CACHE"
+        files_to_remove+=(".version_cache")
+    fi
+    
+    # 删除 setup.sh 如果存在
+    if [[ -f "$CLAUDE_DIR/setup.sh" ]]; then
+        rm -f "$CLAUDE_DIR/setup.sh"
+        files_to_remove+=("setup.sh")
+    fi
+    
+    if [[ ${#files_to_remove[@]} -gt 0 ]]; then
+        print_success "已删除以下文件："
+        for file in "${files_to_remove[@]}"; do
+            echo "  - $file"
+        done
+    fi
+    
+    echo
+    print_success "CCS 卸载完成！"
+    echo
+    print_info "API 配置文件已保留在: $KEYS_FILE"
+    print_info "如果需要完全删除所有数据，请手动删除: rm -rf $CLAUDE_DIR"
+    echo
+    print_info "请运行 'source ~/${shell_rc_file##*/}' 或重新打开终端以使更改生效"
+    echo
+    print_info "感谢使用 Claude Config Switcher！"
+    
+    # 删除 ccs 脚本本身（最后删除）
+    local script_path="$0"
+    if [[ -f "$script_path" ]]; then
+        print_info "正在删除 CCS 脚本..."
+        rm -f "$script_path"
+    fi
+    
+    exit 0
 }
 
 # 显示帮助信息
@@ -1054,6 +1162,7 @@ ${BOLD}用法:${NC}
   ccs edit                   编辑配置
   ccs template               编辑 settings.json 模板
   ccs update                 检查并更新CCS到最新版本
+  ccs uninstall              卸载 CCS（保留配置文件）
   ccs list                   列出所有配置
   ccs help                   显示此帮助信息
 
@@ -1117,6 +1226,9 @@ main() {
             ;;
         update)
             force_update "$@"
+            ;;
+        uninstall)
+            uninstall_ccs
             ;;
         help|-h|--help)
             show_help
