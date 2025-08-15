@@ -222,11 +222,7 @@ register_ccs_command() {
     # 检查是否已经注册
     if grep -q "alias ccs=" "$SHELL_RC_FILE" 2>/dev/null; then
         print_warning "CCS 命令已在 ~/${SHELL_RC_FILE##*/} 中注册"
-        read -rp "是否重新安装? (y/N): " confirm
-        if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
-            print_info "跳过 CCS 命令注册"
-            return 0
-        fi
+        print_info "在线安装中，自动重新安装..."
         
         # 移除旧的注册
         sed -i '/alias ccs=/d' "$SHELL_RC_FILE"
@@ -262,11 +258,8 @@ create_sample_configs() {
         return 0
     fi
     
-    read -rp "是否创建示例配置? (Y/n): " create_sample
-    if [[ "$create_sample" =~ ^[Nn]$ ]]; then
-        print_info "跳过示例配置创建"
-        return 0
-    fi
+    # 在线安装时默认创建示例配置，避免交互式输入问题
+    print_info "自动创建示例配置..."
     
     cat > "$KEYS_FILE" << 'EOF'
 [official]
@@ -499,8 +492,15 @@ main() {
         print_color "$CYAN" "    ccs"
         echo
         
-        # 询问是否立即启动
-        read -rp "$(print_color "$BOLD$WHITE" "是否现在就启动 CCS? (Y/n): ")" start_now
+        # 在线安装默认不自动启动，避免交互问题
+        print_info "在线安装完成，请手动运行上述命令来使用 CCS"
+        
+        # 只在终端环境下才显示询问
+        if [[ -t 0 ]]; then
+            read -rp "$(print_color "$BOLD$WHITE" "是否现在就启动 CCS? (Y/n): ")" start_now
+        else
+            start_now="n"
+        fi
         
         if [[ ! "$start_now" =~ ^[Nn]$ ]]; then
             if [[ -x "$CCS_SCRIPT" ]]; then
