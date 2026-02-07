@@ -290,7 +290,10 @@ create_default_template() {
   "env": {
     "ANTHROPIC_API_KEY": "{{API_KEY}}",
     "ANTHROPIC_BASE_URL": "{{BASE_URL}}",
-    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": 1
+    "CLAUDE_CODE_ATTRIBUTION_HEADER": "0",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "DISABLE_AUTOUPDATER": "1",
+    "DISABLE_INSTALLATION_CHECKS": "1"
   },
   "permissions": {
     "allow": [
@@ -312,7 +315,8 @@ create_default_template() {
     ],
     "deny": []
   },
-  "apiKeyHelper": "echo '{{API_KEY}}'"
+  "apiKeyHelper": "echo '{{API_KEY}}'",
+  "alwaysThinkingEnabled": true
 }
 EOF
     
